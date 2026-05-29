@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { serializeModel } from "@/lib/serialize";
 import { cached, invalidateTags, CacheTags } from "@/lib/cache";
 import { defaultSchemaFor, listProviders } from "@/lib/adapters/registry";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -53,5 +54,9 @@ export async function POST(req: NextRequest) {
   });
 
   invalidateTags(CacheTags.models);
+  logger.info(`model added: "${model.name}" (${model.modelId})`, {
+    modelId: model.id,
+    modelName: model.name,
+  });
   return NextResponse.json({ model: serializeModel(model) }, { status: 201 });
 }

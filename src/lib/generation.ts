@@ -4,6 +4,7 @@ import { saveImage } from "./images";
 import { resolveApiKey } from "./settings";
 import { fireWebhook } from "./webhook";
 import { invalidateTags, CacheTags } from "./cache";
+import { logger } from "./logger";
 
 export interface SessionConfig {
   seedSync: boolean;
@@ -42,6 +43,10 @@ export async function runSession(sessionId: string): Promise<void> {
     orderBy: { createdAt: "asc" },
   });
 
+  logger.info(
+    `session ${sessionId} started — ${results.length} cell(s) queued (concurrency ${CONCURRENCY})`,
+  );
+
   let index = 0;
   async function worker() {
     while (index < results.length) {
@@ -68,6 +73,9 @@ export async function runSession(sessionId: string): Promise<void> {
     data: { status, completedAt: new Date() },
   });
   invalidateTags(CacheTags.analytics);
+  logger.info(
+    `session ${sessionId} completed — status=${status}, done=${done}, errored=${errored}`,
+  );
 
   if (session.webhookUrl) {
     await fireWebhook(session.webhookUrl, {
@@ -81,6 +89,7 @@ export async function runSession(sessionId: string): Promise<void> {
       where: { id: sessionId },
       data: { webhookFiredAt: new Date() },
     });
+    logger.info(`session ${sessionId} webhook POSTed to ${session.webhookUrl}`);
   }
 }
 
@@ -90,10 +99,15 @@ type ResultWithModel = Awaited<
 
 async function processResult(r: ResultWithModel) {
   const startedAt = Date.now();
+  const logCtx = { modelId: r.modelId, modelName: r.modelName };
   await prisma.result.update({
     where: { id: r.id },
     data: { status: "running" },
   });
+  logger.info(
+    `generating prompt#${r.promptIndex} batch#${r.batchIndex} (seed=${r.seed}) via ${r.model.modelId}`,
+    logCtx,
+  );
 
   try {
     const adapter = getAdapter(r.model.provider);
@@ -110,24 +124,31 @@ async function processResult(r: ResultWithModel) {
     });
 
     const imagePath = await saveImage(r.sessionId, r.id, out.imageBase64, out.mime);
+    const latencyMs = Date.now() - startedAt;
     await prisma.result.update({
       where: { id: r.id },
       data: {
         status: "done",
         imagePath,
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
         seed: out.seed ?? r.seed ?? undefined,
       },
     });
+    logger.info(
+      `done prompt#${r.promptIndex} batch#${r.batchIndex} in ${latencyMs}ms (${out.mime})`,
+      logCtx,
+    );
   } catch (e) {
+    const latencyMs = Date.now() - startedAt;
+    const message = (e as Error).message?.slice(0, 500) ?? "Unknown error";
     await prisma.result.update({
       where: { id: r.id },
-      data: {
-        status: "error",
-        error: (e as Error).message?.slice(0, 500) ?? "Unknown error",
-        latencyMs: Date.now() - startedAt,
-      },
+      data: { status: "error", error: message, latencyMs },
     });
+    logger.error(
+      `failed prompt#${r.promptIndex} batch#${r.batchIndex} after ${latencyMs}ms: ${message}`,
+      logCtx,
+    );
   }
 }
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { serializeSession } from "@/lib/serialize";
 import { invalidateTags, CacheTags } from "@/lib/cache";
 import { parseConfig, runSession, seedFor, SessionConfig } from "@/lib/generation";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +106,10 @@ export async function POST(req: NextRequest) {
     }
   }
   await prisma.result.createMany({ data: resultData });
+
+  logger.info(
+    `session ${session.id} created — ${prompts.length} prompt(s) x ${models.length} model(s) x batch ${cfg.batchSize} = ${resultData.length} cell(s); models: ${models.map((m) => m.name).join(", ")}`,
+  );
 
   // Kick generation in the background; respond immediately so the UI can poll.
   void runSession(session.id);
