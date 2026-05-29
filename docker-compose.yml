@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:/data/imagegen.db"
+      DATA_DIR: "/data"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_APP_URL: "${OPENROUTER_APP_URL:-http://localhost:3000}"
+      OPENROUTER_APP_TITLE: "${OPENROUTER_APP_TITLE:-ImageGen Dashboard}"
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      # Persist db + generated images across container restarts.
+      - imagegen-data:/data
+
+volumes:
+  imagegen-data:
