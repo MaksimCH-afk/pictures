@@ -7,8 +7,11 @@ RUN apt-get update -y && apt-get install -y openssl ca-certificates && \
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching.
+# Install dependencies first for better layer caching. The prisma schema must
+# be present before `npm install` because the postinstall hook runs
+# `prisma generate`, which needs prisma/schema.prisma.
 COPY package.json package-lock.json* ./
+COPY prisma ./prisma
 RUN npm install
 
 # App source.
