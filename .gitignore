@@ -5,6 +5,9 @@ build/
 *.log
 npm-debug.log*
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # local env & data
 .env
 .env.local
