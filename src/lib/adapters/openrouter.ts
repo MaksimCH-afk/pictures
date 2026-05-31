@@ -34,45 +34,18 @@ export const openRouterAdapter: ImageAdapter = {
       );
     }
 
-    const userText = buildPrompt(input);
-
-    const body = {
-      model: input.modelId,
-      modalities: ["image", "text"],
-      messages: [{ role: "user", content: userText }],
-      ...(typeof input.seed === "number" ? { seed: input.seed } : {}),
-    };
-
-    let res: Response;
-    try {
-      res = await fetch(OPENROUTER_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${input.apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": process.env.OPENROUTER_APP_URL || "http://localhost:3000",
-          "X-Title": process.env.OPENROUTER_APP_TITLE || "ImageGen Dashboard",
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      throw new AdapterError(
-        `Network error reaching OpenRouter: ${(e as Error).message}`,
-      );
-    }
-
-    const text = await res.text();
-    if (!res.ok) {
-      throw new AdapterError(
-        `OpenRouter ${res.status}: ${extractError(text) ?? text.slice(0, 300)}`,
-      );
-    }
-
+    // Dedicated image models (FLUX, Seedream, Recraft, Grok Imagine) only
+    // support the "image" output modality. Models that also emit text (e.g.
+    // Gemini) need ["image","text"]. Try image-only first, then fall back.
     let json: OpenRouterResponse;
     try {
-      json = JSON.parse(text);
-    } catch {
-      throw new AdapterError("OpenRouter returned a non-JSON response.");
+      json = await callOpenRouter(input, ["image"]);
+    } catch (e) {
+      if (e instanceof ModalityError) {
+        json = await callOpenRouter(input, ["image", "text"]);
+      } else {
+        throw e;
+      }
     }
 
     const image = extractImage(json);
@@ -90,15 +63,67 @@ export const openRouterAdapter: ImageAdapter = {
   },
 };
 
+// Signals that the chosen modalities aren't supported, so the caller can retry.
+class ModalityError extends Error {}
+
+async function callOpenRouter(
+  input: GenerateInput,
+  modalities: string[],
+): Promise<OpenRouterResponse> {
+  const body: Record<string, unknown> = {
+    model: input.modelId,
+    modalities,
+    messages: [{ role: "user", content: buildPrompt(input) }],
+    ...(typeof input.seed === "number" ? { seed: input.seed } : {}),
+  };
+  // Aspect ratio for models that support it (Recraft, FLUX.2, etc.). Only sent
+  // when non-default so the standard 1:1 request body stays minimal.
+  if (input.aspectRatio && input.aspectRatio !== "1:1") {
+    body.image_config = { aspect_ratio: input.aspectRatio };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${input.apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.OPENROUTER_APP_URL || "http://localhost:3000",
+        "X-Title": process.env.OPENROUTER_APP_TITLE || "ImageGen Dashboard",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new AdapterError(
+      `Network error reaching OpenRouter: ${(e as Error).message}`,
+    );
+  }
+
+  const text = await res.text();
+  if (!res.ok) {
+    const msg = extractError(text) ?? text.slice(0, 300);
+    // 404 "No endpoints found that support the requested output modalities"
+    if (res.status === 404 && /output modalities/i.test(msg)) {
+      throw new ModalityError(msg);
+    }
+    throw new AdapterError(`OpenRouter ${res.status}: ${msg}`);
+  }
+
+  try {
+    return JSON.parse(text) as OpenRouterResponse;
+  } catch {
+    throw new AdapterError("OpenRouter returned a non-JSON response.");
+  }
+}
+
 function buildPrompt(input: GenerateInput): string {
   let prompt = input.prompt;
   const negative = input.params?.negative_prompt;
   if (typeof negative === "string" && negative.trim()) {
     prompt += `\n\nAvoid: ${negative.trim()}`;
   }
-  if (input.aspectRatio && input.aspectRatio !== "1:1") {
-    prompt += `\n\nAspect ratio: ${input.aspectRatio}.`;
-  }
+  // Aspect ratio is passed via image_config, not appended to the prompt.
   return prompt;
 }
 

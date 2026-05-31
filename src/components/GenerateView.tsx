@@ -23,6 +23,7 @@ export function GenerateView() {
   const [batchSize, setBatchSize] = useState(1);
   const [blindMode, setBlindMode] = useState(false);
   const [presetId, setPresetId] = useState<string>("");
+  const [aspectRatio, setAspectRatio] = useState("1:1");
 
   const [session, setSession] = useState<SessionDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +105,7 @@ export function GenerateView() {
           prompts: activePrompts,
           modelIds,
           modelParams,
-          config: { seedSync, batchSize, blindMode, presetId: presetId || null },
+          config: { seedSync, batchSize, blindMode, aspectRatio, presetId: presetId || null },
         }),
       });
       const d = await res.json();
@@ -115,7 +116,7 @@ export function GenerateView() {
     } catch {
       setError("Network error starting generation.");
     }
-  }, [abMode, prompts, selected, modelParams, seedSync, batchSize, blindMode, presetId, poll]);
+  }, [abMode, prompts, selected, modelParams, seedSync, batchSize, blindMode, aspectRatio, presetId, poll]);
 
   // ⌘/Ctrl + Enter
   useEffect(() => {
@@ -283,6 +284,21 @@ export function GenerateView() {
                 onChange={(e) => setBatchSize(Number(e.target.value))}
                 className="w-full"
               />
+            </div>
+
+            <div className="space-y-1">
+              <label className="label">Aspect ratio</label>
+              <select
+                value={aspectRatio}
+                onChange={(e) => setAspectRatio(e.target.value)}
+                className="w-full rounded border border-bg-border bg-bg px-2 py-1 text-xs text-fg outline-none focus:border-param"
+              >
+                {["1:1", "16:9", "21:9", "4:3", "3:2", "9:16", "2:3"].map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="space-y-1">

@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
     presetId: body.config?.presetId ?? null,
     blindMode: body.config?.blindMode ?? false,
     seed: typeof body.config?.seed === "number" ? body.config.seed : undefined,
+    aspectRatio: typeof body.config?.aspectRatio === "string" ? body.config.aspectRatio : "1:1",
   };
   const cfg = parseConfig(JSON.stringify(config));
   // Pin a base seed once per session so "sync seed" is consistent across all

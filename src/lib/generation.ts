@@ -12,6 +12,7 @@ export interface SessionConfig {
   presetId?: string | null;
   blindMode: boolean;
   seed?: number; // base seed
+  aspectRatio?: string; // e.g. "1:1", "16:9"
 }
 
 export function parseConfig(json: string): SessionConfig {
@@ -19,6 +20,7 @@ export function parseConfig(json: string): SessionConfig {
     seedSync: true,
     batchSize: 1,
     blindMode: false,
+    aspectRatio: "1:1",
   };
   try {
     return { ...def, ...JSON.parse(json) };
@@ -37,6 +39,9 @@ export async function runSession(sessionId: string): Promise<void> {
   const session = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!session) return;
 
+  const sessionConfig = parseConfig(session.configJson);
+  const aspectRatio = sessionConfig.aspectRatio || "1:1";
+
   const results = await prisma.result.findMany({
     where: { sessionId, status: "pending" },
     include: { model: true },
@@ -51,7 +56,7 @@ export async function runSession(sessionId: string): Promise<void> {
   async function worker() {
     while (index < results.length) {
       const r = results[index++];
-      await processResult(r);
+      await processResult(r, aspectRatio);
     }
   }
   await Promise.all(
@@ -97,7 +102,7 @@ type ResultWithModel = Awaited<
   ReturnType<typeof prisma.result.findMany>
 >[number] & { model: { provider: string; modelId: string; apiKey: string | null } };
 
-async function processResult(r: ResultWithModel) {
+async function processResult(r: ResultWithModel, aspectRatio: string) {
   const startedAt = Date.now();
   const logCtx = { modelId: r.modelId, modelName: r.modelName };
   await prisma.result.update({
@@ -120,7 +125,7 @@ async function processResult(r: ResultWithModel) {
       params,
       modelId: r.model.modelId,
       apiKey,
-      aspectRatio: "1:1",
+      aspectRatio,
     });
 
     const imagePath = await saveImage(r.sessionId, r.id, out.imageBase64, out.mime);
