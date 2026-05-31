@@ -83,10 +83,15 @@ Set a **webhook URL** (Settings, or per session via `webhookUrl`) to receive a
 
 ## A note on models
 
-The seeded examples are Google Gemini image-output models on OpenRouter. Free
-image-generation models come and go — if a model id no longer works you'll see
-the error on the result card. Just edit/add the correct id from
-[openrouter.ai/models](https://openrouter.ai/models) in **Settings**.
+The deploy is seeded with five OpenRouter image models — FLUX.2 Pro, FLUX.2 Max,
+Seedream 4.5, xAI Grok Imagine and Recraft V4.1 Pro — each with its own API key
+(read from `.env` on first run). Keys can also be set/changed per model in the
+**Settings** tab.
 
-Only image-output capable models will return images; text-only chat models will
-report "no image".
+The `modelId` slugs are best-effort. If a model errors with something like
+"model not found", open [openrouter.ai/models](https://openrouter.ai/models),
+copy the exact slug, and update that model's id in **Settings** (or edit
+`prisma/seed.ts` before the first run).
+
+Only image-output capable models return images; text-only chat models report
+"no image".
