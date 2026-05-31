@@ -2,18 +2,15 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// Idempotent: only seeds models on a fresh database so container restarts
-// don't create duplicates. For a clean re-seed run `docker compose down -v`.
+// Runs on every container start. The five managed models below are reconciled
+// by name: their modelId / color are kept correct, and their API key is set
+// from env when provided. This self-heals an existing database (e.g. fixing a
+// wrong model slug) without needing a volume reset. Models added by hand in the
+// UI are left untouched.
 //
-// Per-model OpenRouter API keys are read from environment variables (kept in
-// .env, never committed) so secrets stay out of source control.
+// Per-model OpenRouter API keys come from environment variables (kept in .env,
+// never committed) so secrets stay out of source control.
 async function main() {
-  const count = await prisma.modelAdapter.count();
-  if (count > 0) {
-    console.log(`[seed] ${count} model(s) already present — skipping.`);
-    return;
-  }
-
   const negativeSchema = JSON.stringify([
     {
       key: "negative_prompt",
@@ -24,37 +21,36 @@ async function main() {
     },
   ]);
 
-  // The configured image models. `modelId` must match the exact OpenRouter
-  // slug — verify/adjust on https://openrouter.ai/models if a model errors.
-  // `keyEnv` names the env var holding that model's personal API key.
+  // `modelId` values are the exact OpenRouter slugs (verified against
+  // openrouter.ai). `keyEnv` names the env var holding that model's key.
   const models = [
     {
       name: "FLUX.2 Pro",
-      modelId: "black-forest-labs/flux-2-pro",
+      modelId: "black-forest-labs/flux.2-pro",
       color: "#22d3ee",
       keyEnv: "OR_KEY_FLUX2_PRO",
     },
     {
       name: "FLUX.2 Max",
-      modelId: "black-forest-labs/flux-2-max",
+      modelId: "black-forest-labs/flux.2-max",
       color: "#3b82f6",
       keyEnv: "OR_KEY_FLUX2_MAX",
     },
     {
       name: "Seedream 4.5",
-      modelId: "bytedance/seedream-4.5",
+      modelId: "bytedance-seed/seedream-4.5",
       color: "#ec4899",
       keyEnv: "OR_KEY_SEEDREAM",
     },
     {
       name: "xAI: Grok Imagine",
-      modelId: "x-ai/grok-imagine",
+      modelId: "x-ai/grok-imagine-image-quality",
       color: "#f59e0b",
       keyEnv: "OR_KEY_GROK_IMAGINE",
     },
     {
       name: "Recraft V4.1 Pro",
-      modelId: "recraft-ai/recraft-v4.1-pro",
+      modelId: "recraft/recraft-v4.1-pro",
       color: "#fb7185",
       keyEnv: "OR_KEY_RECRAFT",
     },
@@ -62,26 +58,40 @@ async function main() {
 
   let order = 0;
   for (const m of models) {
-    const apiKey = process.env[m.keyEnv]?.trim() || null;
-    await prisma.modelAdapter.create({
-      data: {
-        name: m.name,
-        provider: "openrouter",
-        modelId: m.modelId,
-        color: m.color,
-        apiKey,
-        enabled: true,
-        aspectRatio: "1:1",
-        paramsSchemaJson: negativeSchema,
-        defaultParamsJson: "{}",
-        sortOrder: order++,
-      },
-    });
-    console.log(
-      `[seed] + ${m.name} (${m.modelId})${apiKey ? " [key set]" : " [no key — set in Settings]"}`,
-    );
+    const envKey = process.env[m.keyEnv]?.trim() || null;
+    const existing = await prisma.modelAdapter.findFirst({ where: { name: m.name } });
+
+    if (existing) {
+      await prisma.modelAdapter.update({
+        where: { id: existing.id },
+        data: {
+          modelId: m.modelId,
+          color: m.color,
+          // Only overwrite the key when env actually provides one.
+          ...(envKey ? { apiKey: envKey } : {}),
+        },
+      });
+      console.log(`[seed] ~ ${m.name} -> ${m.modelId}${envKey ? " [key set]" : ""}`);
+    } else {
+      await prisma.modelAdapter.create({
+        data: {
+          name: m.name,
+          provider: "openrouter",
+          modelId: m.modelId,
+          color: m.color,
+          apiKey: envKey,
+          enabled: true,
+          aspectRatio: "1:1",
+          paramsSchemaJson: negativeSchema,
+          defaultParamsJson: "{}",
+          sortOrder: order,
+        },
+      });
+      console.log(`[seed] + ${m.name} (${m.modelId})${envKey ? " [key set]" : " [no key]"}`);
+    }
+    order++;
   }
-  console.log(`[seed] inserted ${models.length} models.`);
+  console.log(`[seed] reconciled ${models.length} models.`);
 }
 
 main()
