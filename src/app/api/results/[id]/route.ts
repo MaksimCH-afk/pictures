@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { serializeResult } from "@/lib/serialize";
 import { invalidateTags, CacheTags } from "@/lib/cache";
+import { retryResult } from "@/lib/generation";
 
 export const dynamic = "force-dynamic";
 
@@ -26,4 +27,18 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: "Result not found" }, { status: 404 });
   }
+}
+
+// Re-generate a single result cell (Retry), with a fresh seed by default.
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const ok = await retryResult(id, true);
+  if (!ok) {
+    return NextResponse.json({ error: "Result not found" }, { status: 404 });
+  }
+  const result = await prisma.result.findUnique({ where: { id } });
+  return NextResponse.json({ result: result ? serializeResult(result) : null });
 }

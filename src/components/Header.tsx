@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { APP_VERSION } from "@/lib/version";
 
 const TABS = [
   { href: "/", label: "Generate" },
@@ -68,14 +69,22 @@ export function Header() {
         })}
       </nav>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              activeCount ? "animate-pulse-dot bg-action" : "bg-fg-faint"
+            }`}
+          />
+          <span className="mono text-xs text-fg-muted">
+            {activeCount ?? "–"} active
+          </span>
+        </div>
         <span
-          className={`inline-block h-2 w-2 rounded-full ${
-            activeCount ? "animate-pulse-dot bg-action" : "bg-fg-faint"
-          }`}
-        />
-        <span className="mono text-xs text-fg-muted">
-          {activeCount ?? "–"} active
+          className="mono rounded border border-bg-border px-1.5 py-0.5 text-[10px] text-fg-faint"
+          title="App version (bumped on each deploy)"
+        >
+          v{APP_VERSION}
         </span>
       </div>
     </header>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Mono, DM_Sans } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/Header";
+import { APP_VERSION } from "@/lib/version";
 
 const dmMono = DM_Mono({
   weight: ["300", "400", "500"],
@@ -16,7 +17,7 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "ImageGen Dashboard",
+  title: `ImageGen Dashboard v${APP_VERSION}`,
   description: "Compare image-generation models side by side.",
 };
 

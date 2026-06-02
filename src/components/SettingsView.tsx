@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Model, PresetDto } from "@/lib/types";
-import { PlusIcon, TrashIcon } from "./icons";
+import { PlusIcon, TrashIcon, EditIcon } from "./icons";
 
 const PALETTE = [
   "#22d3ee", "#f59e0b", "#ec4899", "#34d399", "#a78bfa",
@@ -129,6 +129,7 @@ function ApiSection({
 /* ---------------- Models ---------------- */
 function ModelsSection({ models, reload }: { models: Model[]; reload: () => void }) {
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   async function toggle(m: Model) {
     await fetch(`/api/models/${m.id}`, {
@@ -159,44 +160,187 @@ function ModelsSection({ models, reload }: { models: Model[]; reload: () => void
       {adding && <AddModelForm onDone={() => { setAdding(false); reload(); }} />}
 
       <div className="space-y-1.5">
-        {models.map((m) => (
-          <div
-            key={m.id}
-            className="flex items-center gap-3 rounded border border-bg-border bg-bg-panel px-3 py-2"
-          >
-            <span
-              className="inline-block h-3 w-3 shrink-0 rounded-full"
-              style={{ background: m.color }}
+        {models.map((m) =>
+          editingId === m.id ? (
+            <EditModelForm
+              key={m.id}
+              model={m}
+              onDone={() => {
+                setEditingId(null);
+                reload();
+              }}
             />
-            <div className="min-w-0 flex-1">
-              <p className="mono truncate text-sm text-fg">{m.name}</p>
-              <p className="mono truncate text-[10px] text-fg-faint">
-                {m.modelId}
-                {m.hasOwnKey && " · own key"}
-              </p>
+          ) : (
+            <div
+              key={m.id}
+              className="flex items-center gap-3 rounded border border-bg-border bg-bg-panel px-3 py-2"
+            >
+              <span
+                className="inline-block h-3 w-3 shrink-0 rounded-full"
+                style={{ background: m.color }}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="mono truncate text-sm text-fg">{m.name}</p>
+                <p className="mono truncate text-[10px] text-fg-faint">
+                  {m.modelId}
+                  {` · ${m.aspectRatio}`}
+                  {m.hasOwnKey && " · own key"}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingId(m.id)}
+                className="rounded p-1.5 text-fg-muted hover:bg-bg-hover hover:text-fg"
+                title="Edit"
+              >
+                <EditIcon width={14} height={14} />
+              </button>
+              <button
+                onClick={() => toggle(m)}
+                className={`mono rounded px-2 py-1 text-[10px] uppercase tracking-wider ${
+                  m.enabled ? "bg-action/20 text-action" : "border border-bg-border text-fg-muted"
+                }`}
+              >
+                {m.enabled ? "enabled" : "disabled"}
+              </button>
+              <button
+                onClick={() => remove(m)}
+                className="rounded p-1.5 text-fg-muted hover:bg-bg-hover hover:text-red-400"
+                title="Delete"
+              >
+                <TrashIcon width={14} height={14} />
+              </button>
             </div>
-            <button
-              onClick={() => toggle(m)}
-              className={`mono rounded px-2 py-1 text-[10px] uppercase tracking-wider ${
-                m.enabled ? "bg-action/20 text-action" : "border border-bg-border text-fg-muted"
-              }`}
-            >
-              {m.enabled ? "enabled" : "disabled"}
-            </button>
-            <button
-              onClick={() => remove(m)}
-              className="rounded p-1.5 text-fg-muted hover:bg-bg-hover hover:text-red-400"
-              title="Delete"
-            >
-              <TrashIcon width={14} height={14} />
-            </button>
-          </div>
-        ))}
+          ),
+        )}
         {models.length === 0 && (
           <p className="mono text-xs text-fg-faint">no models — add one above</p>
         )}
       </div>
     </section>
+  );
+}
+
+const ASPECT_RATIOS = ["1:1", "16:9", "21:9", "4:3", "3:2", "9:16", "2:3"];
+
+function EditModelForm({ model, onDone }: { model: Model; onDone: () => void }) {
+  const [name, setName] = useState(model.name);
+  const [modelId, setModelId] = useState(model.modelId);
+  const [color, setColor] = useState(model.color);
+  const [aspectRatio, setAspectRatio] = useState(model.aspectRatio);
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState("");
+
+  async function save() {
+    setError("");
+    if (!name.trim() || !modelId.trim()) {
+      setError("Name and model id are required.");
+      return;
+    }
+    const body: Record<string, unknown> = {
+      name: name.trim(),
+      modelId: modelId.trim(),
+      color,
+      aspectRatio,
+    };
+    // Only send the key when changed, so we don't clobber the stored one.
+    if (apiKey.trim()) body.apiKey = apiKey.trim();
+    const res = await fetch(`/api/models/${model.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const d = await res.json();
+      setError(d.error ?? "Failed to save.");
+      return;
+    }
+    onDone();
+  }
+
+  return (
+    <div className="space-y-3 rounded border border-action/40 bg-bg-panel p-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Display name">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded border border-bg-border bg-bg px-2 py-1.5 text-sm text-fg outline-none focus:border-action"
+          />
+        </Field>
+        <Field label="OpenRouter model id">
+          <input
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            className="mono w-full rounded border border-bg-border bg-bg px-2 py-1.5 text-xs text-fg outline-none focus:border-action"
+          />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Aspect ratio">
+          <select
+            value={aspectRatio}
+            onChange={(e) => setAspectRatio(e.target.value)}
+            className="w-full rounded border border-bg-border bg-bg px-2 py-1.5 text-xs text-fg outline-none focus:border-action"
+          >
+            {ASPECT_RATIOS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Accent color">
+          <div className="flex flex-wrap gap-1.5">
+            {PALETTE.map((c) => (
+              <button
+                key={c}
+                onClick={() => setColor(c)}
+                className="h-6 w-6 rounded-full transition-transform hover:scale-110"
+                style={{
+                  background: c,
+                  outline: color === c ? "2px solid #fff" : "none",
+                  outlineOffset: "1px",
+                }}
+              />
+            ))}
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
+            />
+          </div>
+        </Field>
+      </div>
+
+      <Field label={model.hasOwnKey ? "Replace API key (leave blank to keep)" : "Per-model API key (optional)"}>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={model.hasOwnKey ? "•••• stored" : "overrides the global key"}
+          className="w-full rounded border border-bg-border bg-bg px-2 py-1.5 text-sm text-fg outline-none focus:border-action"
+        />
+      </Field>
+
+      {error && <p className="mono text-[11px] text-red-400">{error}</p>}
+
+      <div className="flex gap-2">
+        <button
+          onClick={save}
+          className="mono rounded bg-action px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-black hover:opacity-90"
+        >
+          Save
+        </button>
+        <button
+          onClick={onDone}
+          className="mono rounded border border-bg-border px-4 py-1.5 text-xs uppercase tracking-wider text-fg-muted hover:bg-bg-hover"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -157,6 +157,55 @@ async function processResult(r: ResultWithModel, aspectRatio: string) {
   }
 }
 
+// Re-run a single result cell (e.g. after an error), optionally with a fresh
+// seed. Used by the per-card Retry button so a failed/poor cell can be redone
+// without re-running the whole — and re-paying for the whole — session.
+export async function retryResult(
+  resultId: string,
+  newSeed = true,
+): Promise<boolean> {
+  const r = await prisma.result.findUnique({
+    where: { id: resultId },
+    include: { model: true },
+  });
+  if (!r) return false;
+
+  const session = await prisma.session.findUnique({ where: { id: r.sessionId } });
+  const aspectRatio = parseConfig(session?.configJson ?? "{}").aspectRatio || "1:1";
+
+  if (newSeed) {
+    await prisma.result.update({
+      where: { id: r.id },
+      data: { seed: randomSeed() },
+    });
+    r.seed = (await prisma.result.findUnique({ where: { id: r.id } }))!.seed;
+  }
+
+  logger.info(`retry of result ${r.id}`, { modelId: r.modelId, modelName: r.modelName });
+  await processResult(r as ResultWithModel, aspectRatio);
+  // Refresh session aggregate status so the gallery reflects the new outcome.
+  await refreshSessionStatus(r.sessionId);
+  return true;
+}
+
+async function refreshSessionStatus(sessionId: string) {
+  const counts = await prisma.result.groupBy({
+    by: ["status"],
+    where: { sessionId },
+    _count: true,
+  });
+  const pending =
+    (counts.find((c) => c.status === "pending")?._count ?? 0) +
+    (counts.find((c) => c.status === "running")?._count ?? 0);
+  const done = counts.find((c) => c.status === "done")?._count ?? 0;
+  const status = pending > 0 ? "running" : done > 0 ? "done" : "error";
+  await prisma.session.update({
+    where: { id: sessionId },
+    data: { status },
+  });
+  invalidateTags(CacheTags.analytics);
+}
+
 async function promptForResult(r: { sessionId: string; promptIndex: number }) {
   const s = await prisma.session.findUnique({ where: { id: r.sessionId } });
   const prompts = safeParse<string[]>(s?.promptsJson ?? "[]", []);

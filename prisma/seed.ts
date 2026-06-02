@@ -11,13 +11,29 @@ const prisma = new PrismaClient();
 // Per-model OpenRouter API keys come from environment variables (kept in .env,
 // never committed) so secrets stay out of source control.
 async function main() {
-  const negativeSchema = JSON.stringify([
+  // Default per-model parameter schema. The dashboard renders the settings
+  // panel from this automatically. Keys prefixed "ic_" are forwarded into
+  // OpenRouter's image_config (e.g. ic_image_size -> image_config.image_size).
+  const paramsSchema = JSON.stringify([
     {
       key: "negative_prompt",
       label: "Negative prompt",
       type: "text",
       default: "",
       help: "What to avoid (model dependent).",
+    },
+    {
+      key: "ic_image_size",
+      label: "Image size",
+      type: "select",
+      default: "",
+      options: [
+        { value: "", label: "Model default" },
+        { value: "1K", label: "1K" },
+        { value: "2K", label: "2K" },
+        { value: "4K", label: "4K" },
+      ],
+      help: "Resolution hint (supported by FLUX.2 / Recraft / Grok).",
     },
   ]);
 
@@ -67,6 +83,8 @@ async function main() {
         data: {
           modelId: m.modelId,
           color: m.color,
+          // Keep the param schema fresh so existing DBs gain new params too.
+          paramsSchemaJson: paramsSchema,
           // Only overwrite the key when env actually provides one.
           ...(envKey ? { apiKey: envKey } : {}),
         },
@@ -82,7 +100,7 @@ async function main() {
           apiKey: envKey,
           enabled: true,
           aspectRatio: "1:1",
-          paramsSchemaJson: negativeSchema,
+          paramsSchemaJson: paramsSchema,
           defaultParamsJson: "{}",
           sortOrder: order,
         },

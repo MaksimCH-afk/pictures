@@ -76,10 +76,22 @@ async function callOpenRouter(
     messages: [{ role: "user", content: buildPrompt(input) }],
     ...(typeof input.seed === "number" ? { seed: input.seed } : {}),
   };
-  // Aspect ratio for models that support it (Recraft, FLUX.2, etc.). Only sent
-  // when non-default so the standard 1:1 request body stays minimal.
+
+  // image_config carries aspect ratio + any model-specific image settings.
+  // Aspect ratio only when non-default so a plain 1:1 body stays minimal.
+  const imageConfig: Record<string, unknown> = {};
   if (input.aspectRatio && input.aspectRatio !== "1:1") {
-    body.image_config = { aspect_ratio: input.aspectRatio };
+    imageConfig.aspect_ratio = input.aspectRatio;
+  }
+  // Per-model params (from the auto-rendered panel) prefixed "ic_" are
+  // forwarded into image_config, e.g. ic_image_size -> image_config.image_size.
+  for (const [key, value] of Object.entries(input.params ?? {})) {
+    if (key.startsWith("ic_") && value !== "" && value != null) {
+      imageConfig[key.replace(/^ic_/, "")] = value;
+    }
+  }
+  if (Object.keys(imageConfig).length > 0) {
+    body.image_config = imageConfig;
   }
 
   let res: Response;

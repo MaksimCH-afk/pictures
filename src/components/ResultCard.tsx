@@ -2,7 +2,7 @@
 
 import { ResultDto } from "@/lib/types";
 import { Stars } from "./Stars";
-import { PinIcon, DownloadIcon, ExpandIcon, ImageIcon } from "./icons";
+import { PinIcon, DownloadIcon, ExpandIcon, ImageIcon, RetryIcon } from "./icons";
 
 export function ResultCard({
   result,
@@ -11,6 +11,7 @@ export function ResultCard({
   onRate,
   onPin,
   onExpand,
+  onRetry,
 }: {
   result: ResultDto;
   blind: boolean;
@@ -18,9 +19,11 @@ export function ResultCard({
   onRate: (id: string, rating: number) => void;
   onPin: (id: string, pinned: boolean) => void;
   onExpand: (r: ResultDto) => void;
+  onRetry: (id: string) => void;
 }) {
   const color = result.modelColor;
   const pinned = result.pinned;
+  const retrying = result.status === "pending" || result.status === "running";
 
   return (
     <div
@@ -48,6 +51,18 @@ export function ResultCard({
             <span className="mono text-[10px] leading-relaxed text-fg-faint line-clamp-4">
               {result.error}
             </span>
+            <button
+              type="button"
+              onClick={() => onRetry(result.id)}
+              className="mono mt-1 flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[10px] uppercase tracking-wider text-fg-muted hover:bg-bg-hover hover:text-fg"
+            >
+              <RetryIcon width={12} height={12} /> retry
+            </button>
+          </div>
+        ) : retrying ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-fg-faint">
+            <RetryIcon width={22} height={22} className="animate-spin" />
+            <span className="mono text-[10px] uppercase tracking-wider">generating…</span>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-fg-faint">
@@ -93,6 +108,9 @@ export function ResultCard({
         <div className="flex items-center justify-between">
           <Stars value={result.rating} onChange={(v) => onRate(result.id, v)} />
           <div className="flex items-center gap-1">
+            <IconBtn title="Retry (new seed)" onClick={() => onRetry(result.id)}>
+              <RetryIcon width={14} height={14} />
+            </IconBtn>
             <IconBtn
               title={pinned ? "Unpin" : "Pin"}
               active={pinned}

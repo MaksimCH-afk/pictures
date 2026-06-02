@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ResultDto, SessionDto } from "@/lib/types";
 import { ResultCard } from "./ResultCard";
 import { Lightbox } from "./Lightbox";
@@ -16,8 +16,12 @@ export function Gallery({
   const [results, setResults] = useState<ResultDto[]>(session.results);
   const [revealed, setRevealed] = useState(false);
   const [expanded, setExpanded] = useState<ResultDto | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => setResults(session.results), [session.results]);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+  }, []);
 
   const blind = Boolean(session.config.blindMode) && !revealed;
 
@@ -25,8 +29,14 @@ export function Gallery({
     () => results.filter((r) => r.status === "pending" || r.status === "running"),
     [results],
   );
+  // Cards in the grid: finished cells plus any currently (re)generating so a
+  // retried card stays in place showing its spinner instead of vanishing.
   const visible = useMemo(
-    () => results.filter((r) => r.status === "done" || r.status === "error"),
+    () =>
+      results.filter(
+        (r) =>
+          r.status === "done" || r.status === "error" || r.status === "running",
+      ),
     [results],
   );
 
@@ -65,6 +75,40 @@ export function Gallery({
       body: JSON.stringify(body),
     }).catch(() => {});
     onChanged?.();
+  }
+
+  // Poll the session until no cell is pending/running (used after a retry).
+  function startPolling() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const d = await fetch(`/api/sessions/${session.id}`).then((r) => r.json());
+        if (d.session?.results) {
+          setResults(d.session.results);
+          const busy = d.session.results.some(
+            (r: ResultDto) => r.status === "pending" || r.status === "running",
+          );
+          if (!busy && pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            onChanged?.();
+          }
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, 1500);
+  }
+
+  async function retry(id: string) {
+    // Optimistic: show the spinner immediately.
+    setResults((prev) =>
+      prev.map((r) =>
+        r.id === id ? { ...r, status: "running", error: null, imageUrl: null } : r,
+      ),
+    );
+    fetch(`/api/results/${id}`, { method: "POST" }).catch(() => {});
+    startPolling();
   }
 
   function exportSelected() {
@@ -161,6 +205,7 @@ export function Gallery({
                 onRate={(id, rating) => patch(id, { rating })}
                 onPin={(id, pinned) => patch(id, { pinned })}
                 onExpand={setExpanded}
+                onRetry={retry}
               />
             ))}
           </div>
